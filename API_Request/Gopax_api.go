@@ -42,6 +42,7 @@ func call(
 		}
 		if recvWindow != -1 {
 			msg += strconv.Itoa(recvWindow)
+			req.Header.Set("receive-window", strconv.Itoa(recvWindow))
 		}
 		if bodyBytes != nil {
 			msg += string(bodyBytes)
@@ -56,22 +57,19 @@ func call(
 		req.Header.Set("api-key", apiKey)
 		req.Header.Set("timestamp", timestamp)
 		req.Header.Set("signature", signature)
-		if recvWindow != -1 {
-			req.Header.Set("receive-window", strconv.Itoa(recvWindow))
-		}
+
 	}
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
 		panic(err)
 	}
+	
 	defer resp.Body.Close()
 	respBodyBytes, _ := ioutil.ReadAll(resp.Body)
-	respBody := make(map[string]interface{})
-	json.Unmarshal(respBodyBytes, &respBody)
 
 	return &map[string]interface{}{
 		"statusCode": resp.StatusCode,
-		"body":       respBody,
+		"body":       string(respBodyBytes),
 		"header":     resp.Header,
 	}
 }
@@ -82,6 +80,7 @@ func main() {
 		"price": 10000, "tradingPairName": "BTC-KRW",
 	}*/
 	//log.Print(*call(true, "POST", "/orders", postOrderReqBody, 200))
+	log.Print(*call(true, "GET", "/balances", nil, -1))
 	log.Print(*call(true, "GET", "/balances/ETH", nil, -1))
 	//log.Print(*call(true, "GET", "/orders?includePast=true", nil, -1))
 	//log.Print(*call(true, "GET", "/trades?limit=1", nil, -1))
