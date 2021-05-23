@@ -1,33 +1,21 @@
 package main
 
-import "fmt"
-
-type A struct {
+type stru struct {
 	name string
 	num  int
 }
 
-func newA() *A {
-	a := A{}
-	a.name = "hwan"
-	a.num = 10
-
-	return &a
+func (b *stru) Sound() {
+	println("qauck")
+	println(b.name, b.num)
 }
 
-func (a *A) print() {
-	fmt.Println(a)
+type Sounder interface {
+	Sound()
 }
 
 func main() {
-	a := newA()
-	b := A{"zzzz", 100}
-	c := new(A)
-
-	c.name = "qqqq"
-	c.num = 2222
-
-	a.print()      //output : &{hwan 10}
-	fmt.Println(b) //output : {zzzz 100}
-	fmt.Println(c) //output : &{qqqq 2222}
+	var d stru = stru{"1", 2}
+	d.Sound()
+	//fmt.Println(d)
 }
