@@ -1,46 +1,32 @@
 package main
 
-import "math"
+import "fmt"
 
-type Shape interface {
-	area() float64
-	perimeter() float64
+type Calculator interface {
+	plus() int
+	minus() int
 }
 
-//Rect 정의
-type Rect struct {
-	width, height float64
+//Parameter 정의
+type Parameter struct {
+	n1, n2 int
 }
 
-//Circle 정의
-type Circle struct {
-	radius float64
+//Parameter 타입에 대한 Calculator 인터페이스 구현
+func (r *Parameter) plus() int {
+	return r.n1 + r.n2
 }
 
-//Rect 타입에 대한 Shape 인터페이스 구현
-func (r Rect) area() float64 { return r.width * r.height }
-func (r Rect) perimeter() float64 {
-	return 2 * (r.width + r.height)
+func (r *Parameter) minus() int {
+	return r.n1 - r.n2
 }
 
-//Circle 타입에 대한 Shape 인터페이스 구현
-func (c Circle) area() float64 {
-	return math.Pi * c.radius * c.radius
-}
-func (c Circle) perimeter() float64 {
-	return 2 * math.Pi * c.radius
+func showCalc(calc Calculator) {
+	fmt.Println(calc.plus())
+	fmt.Println(calc.minus())
 }
 
 func main() {
-	r := Rect{10., 20.}
-	c := Circle{10}
-
-	showArea(r, c)
-}
-
-func showArea(shapes ...Shape) {
-	for _, s := range shapes {
-		a := s.perimeter() //인터페이스 메서드 호출
-		println(a)
-	}
+	r := &Parameter{30, 20}
+	showCalc(r)
 }
