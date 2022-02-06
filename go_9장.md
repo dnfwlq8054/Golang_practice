@@ -1,0 +1,136 @@
+# 9장 공유 변수를 이용한 동시성
+
+## 9.1 경쟁 상태
+경쟁 상태(race condition)은 프로그램이 여러 고루틴의 작업 간 간섭으로 인해 올바른 결과를 반환하지 못하는 상태를 말합니다.
+경쟁상태는 프로그램에 숨어 있다가 높은 부하, 특정 컴파일러, 플랫폼, 아키택처 등의 특별한 경우에만 가끔 나타나기 때문에 매우 위험하며,
+재현과 진단이 어렵습니다.
+
+```go
+package bank
+var balance int
+func Deposit(amount int) { balance += amount }
+func Balance() int { return balance }
+```
+위 예제는 `Deposit()`과 `Balance()` 함수를 어떤 순서로 호출하건 올바른 결과값을 반환하게 됩니다.
+하지만 이를 고루틴을 사용해 비동기식으로 호출한다면 더 이상 올바른 결과를 보장할 수 없게 됩니다.
+
+왜냐하면 `Deposit()`에 `balance` 를 증가시키는 도중에 `Balance()`를 호출하게 되면 데이터가 계산되기 전 `balance` 값을 반환할 수 있고,
+이를 경쟁 상태(race condition)이라고 말합니다.
+
+많은 개발자들이 이런 경쟁 상태를 그냥 무시하는 경우가 종종 있는데, "상호 배제 비용이 너무 크다", "이 로직은 로깅에만 쓴다.", "메시지 몇 개는 놓쳐도 상관 없다."
+등으로 정당화 합니다. 이런 코드를 사용하는 컴파일러와 플랫폼에 문제가 없다면, 개발자들에게 거짓된 확신을 줄 수 있으므로 주의해야 합니다.
+
+이러한 경쟁 상태를 피하는 방법은 go에서는 3가지가 있습니다.
+1. 변수를 갱신하지 않는것.
+2. 여러 고루틴에서 변수 접근을 피하는 것.
+3. 상호 배제(mutual exclusion)를 사용해 고루틴이 한번에 하나씩만 접근 하도록 만든다.
+
+### 1. 변수를 갱신하지 않는것.
+1번 같은 경우 아래와 같이 변수를 갱신하는 것에서 문제가 발생합니다.
+```go
+var icons = make(map[string]image.Image)
+func loadIcon(name string) image.Image
+func Icon(name string) image.Image {
+    icon, ok := icons[name]
+    if !ok {
+        icon = loadIcon(name)
+        icons[name] = icon
+    }
+    return icon
+}
+```
+위 예제에서 문제가 되는 부분은 `Icon()`함수의 if문 부분입니다.
+`loadIcon(name)` 부분에서 해당 이름에 대한 Image를 가져온 후 icons[name]에 넣고 있는데,
+경쟁상태가 되버리면 원치 않은 결과 값이 넣어질 수 있습니다. 
+
+이를 방지하기 위해선 변수를 선언하고 갱신하지 않는 것인데,
+```go
+var icons = map[string]image.Image {
+    "spades.png":   loadIcon("spades.png")
+    "hearts.png":   loadIcon("hearts.png")
+    "diamonds.png": loadIcon("diamonds.png")
+    "clubs.png":    loadIcon("clubs.png")
+}
+func Icon(name string) image.Image { return icons[name] }
+```
+이렇게 하면 경쟁 상태가 발생해도 문제가 되지 않습니다. 
+
+### 2. 여러 고루틴에서 변수 접근을 피하는 것.
+```go
+// main.go
+package main
+
+import (
+	"bank"
+	"fmt"
+	"log"
+	"time"
+)
+
+func main() {
+	start := time.Now()
+
+	done := make(chan bool)
+
+	// Alice
+	for i := 0; i < 10_000_000; i++ {
+		go func() {
+			bank.Deposit(1)
+			done <- true
+		}()
+	}
+
+	// Wait for both transactions.
+	for i := 0; i < 10_000_000; i++ {
+		if !<-done {
+			panic("error")
+		}
+	}
+
+	fmt.Printf("Balance = %d\n", bank.Balance())
+	defer log.Printf("[time] Elipsed Time: %s", time.Since(start))
+}
+```
+```go
+// bank.go
+package bank
+
+var deposits = make(chan int) // send amount to deposit
+var balances = make(chan int) // receive balance
+
+func Deposit(amount int) { deposits <- amount }
+func Balance() int       { return <-balances }
+
+func teller() {
+	var balance int // balance is confined to teller goroutine
+	for {
+		select {
+		case amount := <-deposits:
+			balance += amount
+		case balances <- balance:
+		}
+	}
+}
+
+func init() {
+	go teller() // start the monitor goroutine
+}
+```
+위 예제에선 `chan`을 생성해서 고루틴의 동기화를 맞추고, `init()`을 사용해 `teller()`를 하나만 생성하게끔 만들어서
+경쟁 상태 문제를 해결하였습니다.
+
+동작 방식을 살펴보면, Thread의 join형태와 유사합니다.
+천만개의 고루틴을 생성 후 출력한 결과 동기화가 잘 이뤄진걸 볼 수 있습니다.
+[image]
+
+이러한 방식은 Go의 슬로건인 "메모리 공유로 통신하지 말라. 대신 통신으로 메모리를 공유해라" 입니다.
+파이프라인 안의 고루틴들은 일반적으로 채널을 통해 변수 주소를 단계별로 전달해 변수를 공유합니다. 
+파이프라인(채널) 단계에서 다음 단계로 변수를 전달 후 이 변수에 접근하지 않는다면, 모든 변수 접근은 순차적으로 이뤄집니다.
+결과적으로 변수는 파이프라인의 한 단계에 국한되며, 다음 단계에서 반복되는 식이며, 이를 직렬 제한(serial confinement)라고 합니다.
+
+※ 채널을 매개변수로 넣을 때, 송신과 수신을 정할 수 있다.
+ex) func f(send chan <- int, reciv <- chan int)
+
+### 3. 상호 배제 : sync.Mutex
+채널 버퍼 용량이 1인 채널을 사용하여 최대 1개의 고루틴만 공유 변수에 접근할 수 있다.
+이를 이진 세마포어라고 한다.
