@@ -67,13 +67,15 @@ import (
 	"time"
 )
 
+const MAX = 10_000_000
+
 func main() {
 	start := time.Now()
 
 	done := make(chan bool)
 
 	// Alice
-	for i := 0; i < 10_000_000; i++ {
+	for i := 0; i < MAX; i++ {
 		go func() {
 			bank.Deposit(1)
 			done <- true
@@ -81,8 +83,8 @@ func main() {
 	}
 
 	// Wait for both transactions.
-	for i := 0; i < 10_000_000; i++ {
-		if !<-done {
+	for i := 0; i < MAX; i++ {
+		if flag, success := <-done; !success && !flag {
 			panic("error")
 		}
 	}
@@ -131,6 +133,53 @@ func init() {
 ※ 채널을 매개변수로 넣을 때, 송신과 수신을 정할 수 있다.
 ex) func f(send chan <- int, reciv <- chan int)
 
+추가로
 ### 3. 상호 배제 : sync.Mutex
 채널 버퍼 용량이 1인 채널을 사용하여 최대 1개의 고루틴만 공유 변수에 접근할 수 있다.
 이를 이진 세마포어라고 한다.
+
+```go
+var (
+    sema = make(chan struct{}, 1) // a binary semaphore guarding balance
+    balance int
+)
+
+func Deposit(amount int) {
+    sema <-struct{}{} // Get token
+    balance += amount
+    <-sema // Release token
+}
+```
+위 예제는 sema라는 전역변수 채널을 선언 후 채널 채널 버퍼 크기에 따라 고루틴이 대기하는 특성을 이용한 방법입니다.
+다른 방법으론 `sync` 패키지의 `Mutex` 타입에서 위와 동일한 동작을 기대할 수 있습니다.
+```go
+import "sync"
+
+var (
+    mu sync.Mutex
+    balance int
+)
+
+func Deposit(amount int) {
+    mu.Lock()
+    balance += amount
+    mu.Unlock()
+}
+```
+이런 식으로 Lock과 Unlock 사이 구간을 임계 영역(critical section) 이라고 합니다.
+헌가지 주위해야할 점은 뮤텍스에 의해 보호되는 변수는 뮤텍스 선언 직후에 선언해야 합니다.
+이 규칙을 어기는 경우에는 문서화를 해야합니다.
+그리고 함수, 뮤텍스 잠금, 변수를 배열하는 것을 모니터라고 합니다.
+link : https://en.wikipedia.org/wiki/Monitor_(synchronization)
+link : https://medium.com/a-journey-with-go/go-monitor-pattern-9decd26fb28
+
+Lock, Unlock을 사용할 때, 사용자의 실수로 Unlock을 빼먹는 경우가 종종 있습니다.
+(코드가 길어지고 복잡해질 때)
+때문에 `defer`를 사용해서 Unlock이 함수 종료 후 실행되게끔 선언하는 것이 좋습니다.
+```go
+func Deposit(amount int) {
+    mu.Lock()
+    defer mu.Unlock()
+    balance += amount
+}
+```

@@ -1,10 +1,17 @@
 package bank
 
-var deposits = make(chan int) // send amount to deposit
-var balances = make(chan int) // receive balance
+import "sync"
 
-func Deposit(amount int) { deposits <- amount }
-func Balance() int       { return <-balances }
+var deposits = make(chan int, 10_000_000) // send amount to deposit
+var balances = make(chan int)             // receive balance
+var mu sync.Mutex
+
+func Deposit(amount int) {
+	mu.Lock()
+	defer mu.Unlock()
+	deposits <- amount
+}
+func Balance() int { return <-balances }
 
 func teller() {
 	var balance int // balance is confined to teller goroutine

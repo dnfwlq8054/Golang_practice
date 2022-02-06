@@ -45,7 +45,11 @@ func main() {
 	}
 
 	// Wait for both transactions.
-	<-done
+	for i:= 0; i < 10; i++ {
+		if flag, success := <- done; !flag, !success {
+			panic("error")
+		}
+	}
 
 	fmt.Printf("Balance = %d\n", bank.Balance())
 	defer log.Printf("[time] Elipsed Time: %s", time.Since(start))
