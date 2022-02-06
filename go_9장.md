@@ -133,7 +133,28 @@ func init() {
 ※ 채널을 매개변수로 넣을 때, 송신과 수신을 정할 수 있다.
 ex) func f(send chan <- int, reciv <- chan int)
 
-추가로
+추가로 위 예제에서 `sync.WaitGroup` 을 사용하면 채널들을 쉽게 묶어서 관리할 수 있습니다.
+```go
+import "sync"
+
+func main() {
+    start := time.Now()
+
+    var wg sync.WaitGroup
+    for i := 0; i < 10; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            bank.Deposit(1)
+        }()
+    }
+    wg.Wait()
+
+    fmt.Printf("Balance = %d\n", bank.Balance())
+    defer log.Printf("[time] Elipsed Time: %s", time.Since(start))
+}
+```
+
 ### 3. 상호 배제 : sync.Mutex
 채널 버퍼 용량이 1인 채널을 사용하여 최대 1개의 고루틴만 공유 변수에 접근할 수 있다.
 이를 이진 세마포어라고 한다.
