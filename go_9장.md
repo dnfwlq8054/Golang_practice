@@ -204,3 +204,104 @@ func Deposit(amount int) {
     balance += amount
 }
 ```
+
+### 4. 비동기시 유의사항.
+```go
+// main.go
+package main
+
+import (
+	"bank"
+	"fmt"
+	"log"
+	"time"
+)
+
+const MAX = 10
+
+func main() {
+	start := time.Now()
+
+	done := make(chan bool)
+
+	// Alice
+	for i := 0; i < MAX; i++ {
+		go func() {
+			bank.Deposit(1)
+			done <- true
+		}()
+	}
+
+	// Wait for both transactions.
+	for i := 0; i < MAX; i++ {
+		if flag, success := <-done; !success && !flag {
+			panic("error")
+		}
+	}
+
+	fmt.Printf("Balance = %d\n", bank.Balance())
+	defer log.Printf("[time] Elipsed Time: %s", time.Since(start))
+}
+```
+```go
+// bank.go
+package bank
+
+var deposits = make(chan int, 10) // send amount to deposit
+var balances = make(chan int) // receive balance
+
+func Deposit(amount int) { deposits <- amount }
+func Balance() int       { return <-balances }
+
+func teller() {
+	var balance int // balance is confined to teller goroutine
+	for {
+		select {
+		case amount := <-deposits:
+			balance += amount
+		case balances <- balance:
+		}
+	}
+}
+
+func init() {
+	go teller() // start the monitor goroutine
+}
+```
+link : https://go.dev/play/p/ajoFs80k7Vy
+
+언듯보면 정상적인 코드로 보이지만, 위 코드는 잘못된 코드입니다. 
+
+`deposits` 채널에 버퍼가 들어갔기 때문입니다. 
+
+상호배제와 여러 고루틴에서 변수에 접근을 피하는것처럼 보이지만, `deposits` 채널에 버퍼를 넣어줌으로서 `main`에서 생성되는 goroutine은 비동기적으로 버퍼에 값을 넣고 종료해 버리기 때문에,
+
+`teller()`가 연산을 다 마치기전에 함수는 끝나버리게 됩니다. 
+
+이런경우에는 버퍼를 사용하지 않으므로써 동기화를 맞춰 문제를 해결할 수 있습니다.
+
+
+### 5. Mutex 주의사항
+```go
+import "sync"
+
+var mu sync.Mutex
+
+func Deposit(amount int) {
+	mu.Lock()
+	defer mu.Unlock()
+	deposits <- amount
+}
+func Balance() int { return <-balances }
+
+func Withdraw(amount int) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	Deposit(-amount)
+
+	return true
+}
+```
+
+위 코드 처럼 같은 mutex를 사용할 때, 또다시 mutex를 사용하면 dead lock이 발생 할 수 있습니다. 때문에 mutex는 중복사용하는건 좋지 않으며, 새로 만들어 주는것이 좋습니다.
+
